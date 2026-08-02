@@ -7,7 +7,7 @@ der .env) -- wie viele es gibt, erkennt der Server automatisch daran, wie
 viele REMINDER_SLOT_<N>_ROUTINE_ID/_API_KEY-Paare tatsaechlich gesetzt sind,
 kein Limit muss irgendwo eingestellt werden. erinnerung_erstellen belegt automatisch den naechsten freien
 Platz; ein Hintergrund-Thread (app/scheduler.py) prueft periodisch, ob ein
-Platz faellig ist (Zielzeitpunkt minus Vorlaufzeit erreicht), und loest dann
+Platz faellig ist (der gespeicherte zeitpunkt erreicht ist), und loest dann
 die zu diesem Platz gehoerende Routine aus -- die Aufgabe bekommt sie direkt
 in der Ausloese-Nachricht mitgeschickt, kein Nachlesen noetig. Der Server
 raeumt NICHTS automatisch selbst auf (das wuerde gegen die gerade erst
@@ -22,7 +22,7 @@ wiederverwendbar.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import uvicorn
@@ -96,16 +96,16 @@ def _zeitpunkt_parsen(zeitpunkt: str) -> datetime:
 
 @mcp.tool()
 def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True, platz: int = 0) -> dict:
-    """Plant eine Erinnerung: loest zum angegebenen Zeitpunkt (minus Vorlaufzeit,
-    Standard 5 Minuten, siehe erinnerungen_liste fuer die genaue Konfiguration)
-    automatisch eine Claude Routine aus, die die Aufgabe direkt in der
-    Ausloese-Nachricht mitgeschickt bekommt (kein Nachlesen noetig). Sucht
-    sich standardmaessig selbststaendig den naechsten freien von mehreren
-    konfigurierten Plaetzen -- kein weiterer Tool-Aufruf noetig.
+    """Plant eine Erinnerung: loest GENAU zum angegebenen Zeitpunkt automatisch
+    eine Claude Routine aus, die die Aufgabe direkt in der Ausloese-Nachricht
+    mitgeschickt bekommt (kein Nachlesen noetig). Sucht sich standardmaessig
+    selbststaendig den naechsten freien von mehreren konfigurierten Plaetzen
+    -- kein weiterer Tool-Aufruf noetig.
 
     zeitpunkt: ISO 8601 Datum+Uhrzeit, z.B. '2026-08-01T15:00:00'. Ohne
         Zeitzonen-Offset wird die konfigurierte Server-Zeitzone angenommen.
-        Muss in der Zukunft liegen.
+        Muss in der Zukunft liegen. Die Routine wird genau zu diesem
+        Zeitpunkt ausgeloest (kein Vorlauf, keine Verschiebung).
     aufgabe: Freitext, wird der ausgeloesten Routine 1:1 in der Ausloese-
         Nachricht mitgegeben -- die Routine bekommt sonst keinen weiteren
         Chat-Kontext mit, also entsprechend selbststaendig verstaendlich
@@ -127,10 +127,6 @@ def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True, pl
     if ziel_dt <= jetzt:
         raise ValueError(f"zeitpunkt {zeitpunkt!r} liegt in der Vergangenheit.")
 
-    ausloese_dt = ziel_dt - timedelta(minutes=settings.vorlauf_minuten)
-    if ausloese_dt <= jetzt:
-        ausloese_dt = jetzt
-
     if platz == 0:
         gewaehlter_platz = naechsten_freien_platz_finden(settings)
         if gewaehlter_platz is None:
@@ -146,8 +142,7 @@ def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True, pl
 
     eintrag = SlotEintrag(
         aufgabe=aufgabe,
-        zielzeitpunkt=ziel_dt.isoformat(),
-        ausloesezeitpunkt=ausloese_dt.isoformat(),
+        zeitpunkt=ziel_dt.isoformat(),
         einmalig=einmalig,
         erstellt_am=jetzt.isoformat(),
     )
@@ -155,10 +150,9 @@ def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True, pl
 
     return {
         "platz": gewaehlter_platz,
-        "zielzeitpunkt": eintrag.zielzeitpunkt,
-        "ausloesezeitpunkt": eintrag.ausloesezeitpunkt,
+        "zeitpunkt": eintrag.zeitpunkt,
         "einmalig": einmalig,
-        "hinweis": f"Erinnerung auf Platz {gewaehlter_platz} gespeichert, wird um {eintrag.ausloesezeitpunkt} automatisch ausgeloest.",
+        "hinweis": f"Erinnerung auf Platz {gewaehlter_platz} gespeichert, wird um {eintrag.zeitpunkt} automatisch ausgeloest.",
     }
 
 

@@ -19,9 +19,9 @@ blockieren (eine einzelne claude.ai-Routine kann nicht sinnvoll zweimal
 parallel laufen).
 
 1. `erinnerung_erstellen(zeitpunkt, aufgabe)` sucht sich automatisch den
-   naechsten freien Platz, speichert die Aufgabe dort und berechnet den
-   Ausloesezeitpunkt (`zeitpunkt` minus `VORLAUF_MINUTEN`). Das ist der
-   einzige Tool-Aufruf, der fuer den Normalfall noetig ist.
+   naechsten freien Platz und speichert die Aufgabe dort fuer genau diesen
+   `zeitpunkt` -- kein Vorlauf, keine Verschiebung. Das ist der einzige
+   Tool-Aufruf, der fuer den Normalfall noetig ist.
 2. Ein Hintergrund-Thread im Server prueft alle `POLL_INTERVALL_SEKUNDEN`,
    ob ein Platz faellig ist, und loest dann per HTTP die zu diesem Platz
    gehoerende claude.ai-Routine aus (dieselbe API wie bei Ida-Telegrams

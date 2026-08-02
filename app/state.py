@@ -22,8 +22,7 @@ _lock = threading.Lock()
 @dataclass
 class SlotEintrag:
     aufgabe: str
-    zielzeitpunkt: str  # ISO 8601, mit Zeitzonen-Offset
-    ausloesezeitpunkt: str  # ISO 8601, mit Zeitzonen-Offset (= zielzeitpunkt - Vorlauf)
+    zeitpunkt: str  # ISO 8601, mit Zeitzonen-Offset -- genau dann wird ausgeloest
     einmalig: bool
     erstellt_am: str  # ISO 8601, mit Zeitzonen-Offset
     ausgeloest: bool = False
@@ -112,9 +111,9 @@ def faellige_plaetze_finden(settings: Settings, jetzt: datetime) -> list[tuple[i
         if eintrag.get("ausgeloest"):
             continue
         try:
-            ausloesezeitpunkt = datetime.fromisoformat(eintrag["ausloesezeitpunkt"])
+            zeitpunkt = datetime.fromisoformat(eintrag["zeitpunkt"])
         except (KeyError, ValueError):
             continue
-        if ausloesezeitpunkt <= jetzt:
+        if zeitpunkt <= jetzt:
             faellig.append((int(platz_str), eintrag))
     return faellig

@@ -35,7 +35,6 @@ class SlotZugang:
 class Settings:
     slots: dict[int, SlotZugang]
     timezone: str
-    vorlauf_minuten: int
     poll_intervall_sekunden: int
     state_path: str
 
@@ -93,10 +92,6 @@ def load_settings() -> Settings:
         except ZoneInfoNotFoundError as exc:
             raise ConfigError(f"TIMEZONE={tz_name!r} ist keine gueltige IANA-Zeitzone (z.B. 'Europe/Berlin').") from exc
 
-        vorlauf_minuten = int(_optional("VORLAUF_MINUTEN", "5"))
-        if vorlauf_minuten < 0:
-            raise ConfigError("VORLAUF_MINUTEN darf nicht negativ sein.")
-
         poll_intervall_sekunden = int(_optional("POLL_INTERVALL_SEKUNDEN", "20"))
         if poll_intervall_sekunden < 1:
             raise ConfigError("POLL_INTERVALL_SEKUNDEN muss mindestens 1 sein.")
@@ -111,7 +106,6 @@ def load_settings() -> Settings:
         settings = Settings(
             slots=slots,
             timezone=tz_name,
-            vorlauf_minuten=vorlauf_minuten,
             poll_intervall_sekunden=poll_intervall_sekunden,
             state_path=_optional("STATE_PATH", "/data/state.json"),
             mcp_auth_token=mcp_auth_token,
