@@ -25,22 +25,31 @@ parallel laufen).
 2. Ein Hintergrund-Thread im Server prueft alle `POLL_INTERVALL_SEKUNDEN`,
    ob ein Platz faellig ist, und loest dann per HTTP die zu diesem Platz
    gehoerende claude.ai-Routine aus (dieselbe API wie bei Ida-Telegrams
-   Auto-Reply).
-3. Die ausgeloeste Routine bekommt nur eine kurze Nachricht, die sie
-   anweist, `erinnerungen_liste(platz=N)` aufzurufen, um die eigentliche
-   Aufgabe nachzulesen, und diese dann auszufuehren.
-4. War es eine einmalige Aufgabe, ruft die Routine danach selbst
-   `erinnerung_leeren(platz=N)` auf -- der Platz ist damit sofort wieder
-   frei fuer eine ganz andere, spaetere Erinnerung.
+   Auto-Reply) -- **die Aufgabe steht direkt im Text der Ausloese-Nachricht**,
+   die Routine muss dafuer nichts extra nachlesen.
+3. Der Server raeumt danach **nichts von sich aus auf** (das wuerde gegen
+   die Routine racen, die die Aufgabe gerade erst bekommt) -- er markiert
+   den Platz nur als "ausgeloest", damit er nicht bei jedem weiteren
+   Poll-Durchlauf erneut feuert.
+4. Die ausgeloeste Routine entscheidet nach dem Ausfuehren **selbst**, was
+   als naechstes passiert: war es eine einmalige Aufgabe, ruft sie
+   `erinnerung_leeren(platz=N)` auf -- der Platz ist damit wieder frei fuer
+   eine ganz andere, spaetere Erinnerung. Soll die Erinnerung wiederkehren,
+   ruft sie stattdessen `erinnerung_erstellen(zeitpunkt=<naechster Termin>,
+   aufgabe=..., platz=N)` mit **derselben** Platznummer auf und plant sich
+   damit selbst fuer den naechsten Termin neu ein.
 
-Weil die eigentliche Aufgabe erst zur Laufzeit aus dem Platz gelesen wird,
-koennen **alle Routinen denselben, komplett generischen System-Prompt**
-haben -- z.B.:
+Weil die eigentliche Aufgabe direkt in der Ausloese-Nachricht steckt und die
+Entscheidung "fertig oder weiterlaufen" bei der Routine liegt, koennen
+**alle Routinen denselben, komplett generischen System-Prompt** haben --
+z.B.:
 
-> Du bist eine Ida-Reminder-Ausfuehrungs-Routine. Wenn du ausgeloest wirst,
-> steht in der Nachricht, welches Ida-Reminder-Tool du aufrufen sollst, um
-> deine Aufgabe zu erfahren. Folge dieser Anweisung, fuehre die Aufgabe aus,
-> und raeume danach ggf. wie angewiesen auf.
+> Du bist eine Ida-Reminder-Ausfuehrungs-Routine. Die Ausloese-Nachricht
+> enthaelt deine Aufgabe direkt -- fuehre sie aus. Entscheide danach selbst:
+> war es eine einmalige Sache, ruf im Ida-Reminder-MCP `erinnerung_leeren`
+> mit deiner eigenen Platznummer auf. Soll die Erinnerung wiederkehren, ruf
+> stattdessen `erinnerung_erstellen` mit dem naechsten Zeitpunkt und
+> **derselben** Platznummer auf, um dich selbst neu einzuplanen.
 
 Nur die API-Trigger (routine_id + Key) sind pro Platz unterschiedlich, nicht
 der Inhalt der Routinen selbst.
@@ -49,8 +58,8 @@ der Inhalt der Routinen selbst.
 
 | Tool | Beschreibung |
 |---|---|
-| `erinnerung_erstellen` | Plant eine Erinnerung (`zeitpunkt`, `aufgabe`, optional `einmalig`, Standard `True`). Sucht sich selbst einen freien Platz. |
-| `erinnerungen_liste` | Zeigt alle Plaetze mit Status (optional `platz=N` fuer nur einen -- so liest eine ausgeloeste Routine ihre eigene Aufgabe). |
+| `erinnerung_erstellen` | Plant eine Erinnerung (`zeitpunkt`, `aufgabe`, optional `einmalig`, optional `platz`). Ohne `platz` (Standard `0`) wird automatisch der naechste freie gewaehlt; mit `platz=N` wird gezielt genau dieser Platz belegt/ueberschrieben -- so plant sich eine ausgeloeste Routine mit ihrer eigenen Nummer selbst neu ein. |
+| `erinnerungen_liste` | Zeigt alle Plaetze mit Status (optional `platz=N` fuer nur einen). |
 | `erinnerung_leeren` | Gibt einen Platz wieder frei (Aufgabe abbrechen ODER nach Erledigung aufraeumen). **Kein** `bestaetigt`-Zwang -- siehe Sicherheit. |
 | `aktuelle_uhrzeit` | Aktuelle Zeit in Server-Zeitzone + UTC (fuer relative Angaben wie "in 10 Minuten" -> absoluter `zeitpunkt`), ohne dafuer extra SSH auf einen anderen Server zu brauchen. |
 
@@ -84,8 +93,9 @@ viele moeglich -- einfach weitere `REMINDER_SLOT_<N>_*`-Paare anlegen):
    `REMINDER_SLOT_1_ROUTINE_ID=trig_...` und
    `REMINDER_SLOT_1_API_KEY=sk-ant-oat01-...`.
 4. Diese Routine bei den claude.ai-Connectors mit dem Ida-Reminder-MCP-Server
-   verbinden (Schritt 6), damit sie `erinnerungen_liste`/`erinnerung_leeren`
-   aufrufen kann.
+   verbinden (Schritt 6), damit sie sich nach dem Ausfuehren selbst per
+   `erinnerung_leeren` aufraeumen bzw. per `erinnerung_erstellen` (mit
+   derselben Platznummer) fuer den naechsten Termin neu einplanen kann.
 
 Wiederholen fuer jeden weiteren Platz. Ein neu generierter Token widerruft
 den alten fuer denselben Trigger.
@@ -130,7 +140,7 @@ https://<dein-hostname>.kulbarts.com/mcp?token=<MCP_AUTH_TOKEN>
 
 Fuer die claude.ai-Routinen aus Schritt 1: ebenfalls als Connector mit einer
 dieser beiden URL-Varianten hinzufuegen, damit die ausgeloeste Routine
-`erinnerungen_liste` und `erinnerung_leeren` aufrufen kann.
+`erinnerung_leeren` bzw. `erinnerung_erstellen` aufrufen kann.
 
 ## Troubleshooting
 

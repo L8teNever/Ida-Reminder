@@ -8,11 +8,15 @@ viele REMINDER_SLOT_<N>_ROUTINE_ID/_API_KEY-Paare tatsaechlich gesetzt sind,
 kein Limit muss irgendwo eingestellt werden. erinnerung_erstellen belegt automatisch den naechsten freien
 Platz; ein Hintergrund-Thread (app/scheduler.py) prueft periodisch, ob ein
 Platz faellig ist (Zielzeitpunkt minus Vorlaufzeit erreicht), und loest dann
-die zu diesem Platz gehoerende Routine aus. Die ausgeloeste Routine liest
-ihre eigene Aufgabe per erinnerungen_liste(platz=...) nach und raeumt sich
-bei einmaligen Aufgaben selbst mit erinnerung_leeren wieder auf -- so bleibt
-derselbe Routine-Trigger fuer beliebig viele, inhaltlich ganz unterschiedliche
-Erinnerungen wiederverwendbar.
+die zu diesem Platz gehoerende Routine aus -- die Aufgabe bekommt sie direkt
+in der Ausloese-Nachricht mitgeschickt, kein Nachlesen noetig. Der Server
+raeumt NICHTS automatisch selbst auf (das wuerde gegen die gerade erst
+ausgeloeste Routine racen): die ausgeloeste Routine entscheidet nach dem
+Ausfuehren selbst, ob sie sich mit erinnerung_leeren aufraeumt (fertig) oder
+mit erinnerung_erstellen(..., platz=<eigene Nummer>) fuer den naechsten
+Termin neu einplant -- so bleibt derselbe Routine-Trigger fuer beliebig
+viele, inhaltlich ganz unterschiedliche und auch wiederkehrende Erinnerungen
+wiederverwendbar.
 """
 
 from __future__ import annotations
@@ -49,12 +53,16 @@ mcp = FastMCP(
         "Werkzeuge, um sich selbst zeitversetzt an eine Aufgabe zu erinnern. "
         "erinnerung_erstellen(zeitpunkt, aufgabe) reicht fuer den Normalfall -- "
         "sucht sich automatisch einen freien Platz, alles Weitere (Timing, "
-        "Ausloesen) macht der Server selbst im Hintergrund, dafuer ist kein "
-        "weiterer Tool-Aufruf noetig. erinnerungen_liste zeigt den "
-        "Belegungsstatus aller Plaetze (mit platz=N nur einen einzelnen -- das "
-        "ist auch der Weg, wie eine gerade ausgeloeste Routine ihre eigene "
-        "Aufgabe nachliest). erinnerung_leeren gibt einen Platz wieder frei "
-        "(egal ob noch geplant oder schon ausgeloest) -- hat bewusst KEINEN "
+        "Ausloesen inkl. der Aufgabe direkt in der Nachricht) macht der "
+        "Server selbst im Hintergrund. WICHTIG fuer die ausgeloeste Routine "
+        "selbst: der Server raeumt nach dem Ausloesen NICHTS automatisch auf "
+        "-- du musst nach dem Ausfuehren der Aufgabe selbst entscheiden und "
+        "aktiv werden: entweder erinnerung_leeren(platz=N) aufrufen (fertig, "
+        "einmalige Aufgabe) oder erinnerung_erstellen(zeitpunkt=<naechster "
+        "Termin>, aufgabe=..., platz=N) mit DERSELBEN Platznummer (fuer "
+        "wiederkehrende Aufgaben, um sich selbst neu einzuplanen). "
+        "erinnerungen_liste zeigt den Belegungsstatus aller Plaetze (mit "
+        "platz=N nur einen einzelnen). erinnerung_leeren hat bewusst KEINEN "
         "Bestaetigungs-Zwang, weil eine automatisch ausgeloeste Routine sich "
         "damit selbststaendig aufraeumen koennen muss, ohne dass jemand im "
         "Chat sitzt, der eine Rueckfrage beantworten koennte. "
@@ -87,24 +95,31 @@ def _zeitpunkt_parsen(zeitpunkt: str) -> datetime:
 
 
 @mcp.tool()
-def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True) -> dict:
+def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True, platz: int = 0) -> dict:
     """Plant eine Erinnerung: loest zum angegebenen Zeitpunkt (minus Vorlaufzeit,
     Standard 5 Minuten, siehe erinnerungen_liste fuer die genaue Konfiguration)
-    automatisch eine Claude Routine aus, die die Aufgabe ausfuehrt. Sucht sich
-    dafuer selbststaendig den naechsten freien von mehreren konfigurierten
-    Plaetzen -- kein weiterer Tool-Aufruf noetig.
+    automatisch eine Claude Routine aus, die die Aufgabe direkt in der
+    Ausloese-Nachricht mitgeschickt bekommt (kein Nachlesen noetig). Sucht
+    sich standardmaessig selbststaendig den naechsten freien von mehreren
+    konfigurierten Plaetzen -- kein weiterer Tool-Aufruf noetig.
 
     zeitpunkt: ISO 8601 Datum+Uhrzeit, z.B. '2026-08-01T15:00:00'. Ohne
         Zeitzonen-Offset wird die konfigurierte Server-Zeitzone angenommen.
         Muss in der Zukunft liegen.
-    aufgabe: Freitext, wird der ausgeloesten Routine spaeter 1:1 zum
-        Nachlesen bereitgestellt (siehe erinnerungen_liste) -- die Routine
-        bekommt sonst keinen weiteren Chat-Kontext mit, also entsprechend
-        selbststaendig verstaendlich formulieren.
-    einmalig: True (Standard) = informiert die ausgeloeste Routine, dass sie
-        den Platz danach selbst wieder freigeben soll (erinnerung_leeren).
-        False = Platz bleibt nach dem Ausloesen belegt, bis er manuell mit
-        erinnerung_leeren freigegeben wird.
+    aufgabe: Freitext, wird der ausgeloesten Routine 1:1 in der Ausloese-
+        Nachricht mitgegeben -- die Routine bekommt sonst keinen weiteren
+        Chat-Kontext mit, also entsprechend selbststaendig verstaendlich
+        formulieren.
+    einmalig: True (Standard) = nur ein Hinweis fuer die ausgeloeste Routine,
+        wie diese Erinnerung gedacht war. Entscheidet NICHT automatisch,
+        was passiert -- das macht die Routine nach dem Ausfuehren selbst:
+        entweder erinnerung_leeren (fertig) oder erinnerung_erstellen mit
+        gleichem platz und neuem zeitpunkt (naechster Termin).
+    platz: 0 (Standard) = naechsten freien Platz automatisch waehlen. Sonst
+        genau diesen Platz belegen/ueberschreiben, egal ob er gerade frei,
+        belegt oder schon ausgeloest ist -- so kann eine gerade ausgeloeste
+        Routine sich selbst mit ihrer eigenen Platznummer fuer den naechsten
+        Termin neu einplanen.
     """
     ziel_dt = _zeitpunkt_parsen(zeitpunkt)
 
@@ -116,13 +131,18 @@ def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True) ->
     if ausloese_dt <= jetzt:
         ausloese_dt = jetzt
 
-    platz = naechsten_freien_platz_finden(settings)
-    if platz is None:
-        raise ValueError(
-            f"Alle {len(settings.slots)} konfigurierten Plaetze sind aktuell belegt -- "
-            "erinnerungen_liste zeigt den Belegungsstatus, ggf. erst erinnerung_leeren "
-            "fuer einen nicht mehr benoetigten Platz aufrufen."
-        )
+    if platz == 0:
+        gewaehlter_platz = naechsten_freien_platz_finden(settings)
+        if gewaehlter_platz is None:
+            raise ValueError(
+                f"Alle {len(settings.slots)} konfigurierten Plaetze sind aktuell belegt -- "
+                "erinnerungen_liste zeigt den Belegungsstatus, ggf. erst erinnerung_leeren "
+                "fuer einen nicht mehr benoetigten Platz aufrufen."
+            )
+    elif platz in settings.slots:
+        gewaehlter_platz = platz
+    else:
+        raise ValueError(f"Platz {platz} existiert nicht (konfigurierte Plaetze: {sorted(settings.slots)}).")
 
     eintrag = SlotEintrag(
         aufgabe=aufgabe,
@@ -131,14 +151,14 @@ def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True) ->
         einmalig=einmalig,
         erstellt_am=jetzt.isoformat(),
     )
-    platz_belegen(settings, platz, eintrag)
+    platz_belegen(settings, gewaehlter_platz, eintrag)
 
     return {
-        "platz": platz,
+        "platz": gewaehlter_platz,
         "zielzeitpunkt": eintrag.zielzeitpunkt,
         "ausloesezeitpunkt": eintrag.ausloesezeitpunkt,
         "einmalig": einmalig,
-        "hinweis": f"Erinnerung auf Platz {platz} gespeichert, wird um {eintrag.ausloesezeitpunkt} automatisch ausgeloest.",
+        "hinweis": f"Erinnerung auf Platz {gewaehlter_platz} gespeichert, wird um {eintrag.ausloesezeitpunkt} automatisch ausgeloest.",
     }
 
 

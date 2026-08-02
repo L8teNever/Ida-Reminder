@@ -12,23 +12,25 @@ from datetime import datetime, timezone
 
 from app.config import Settings
 from app.routine_client import routine_ausloesen
-from app.state import (
-    faellige_plaetze_finden,
-    platz_als_ausgeloest_markieren,
-    platz_freigeben,
-)
+from app.state import faellige_plaetze_finden, platz_als_ausgeloest_markieren
 
 log = logging.getLogger("ida-reminder.scheduler")
 
 
-def _nachricht_bauen(platz: int) -> str:
+def _nachricht_bauen(platz: int, eintrag: dict) -> str:
+    einmalig = eintrag.get("einmalig", True)
+    hinweis = "einmalig" if einmalig else "wiederkehrend"
     return (
-        f"[Ida-Reminder] Erinnerung auf Platz {platz} ist jetzt faellig. Rufe im "
-        f"Ida-Reminder MCP-Server 'erinnerungen_liste' mit platz={platz} auf, um "
-        "die dort hinterlegte Aufgabe zu lesen, und fuehre sie aus. Steht dort "
-        f"einmalig=true, rufe danach 'erinnerung_leeren' mit platz={platz} auf, um "
-        "den Platz wieder freizugeben -- bei einmalig=false den Platz einfach "
-        "belegt lassen."
+        f"[Ida-Reminder] Erinnerung auf Platz {platz} ist jetzt faellig "
+        f"(urspruenglich als {hinweis} angelegt -- nur ein Hinweis, du "
+        "entscheidest selbst was als naechstes passiert):\n\n"
+        f"{eintrag.get('aufgabe', '')}\n\n"
+        "Fuehre diese Aufgabe jetzt aus. Entscheide danach selbst: War es "
+        f"eine einmalige Sache, rufe erinnerung_leeren(platz={platz}) auf, "
+        "um den Platz wieder freizugeben. Soll die Erinnerung wiederkehren, "
+        "rufe stattdessen erinnerung_erstellen(zeitpunkt=<naechster Termin>, "
+        f"aufgabe=..., einmalig=..., platz={platz}) auf, um genau diesen "
+        "Platz fuer den naechsten Termin neu zu belegen."
     )
 
 
@@ -40,16 +42,19 @@ def _durchlauf(settings: Settings) -> None:
             log.warning("Faelliger Platz %s hat keine konfigurierten Zugangsdaten (mehr), ueberspringe", platz)
             continue
 
-        erfolg = routine_ausloesen(zugang.routine_id, zugang.api_key, _nachricht_bauen(platz))
+        erfolg = routine_ausloesen(zugang.routine_id, zugang.api_key, _nachricht_bauen(platz, eintrag))
         if not erfolg:
             log.error("Ausloesen der Routine fuer Platz %s fehlgeschlagen, wird beim naechsten Durchlauf erneut versucht", platz)
             continue
 
         log.info("Routine fuer Platz %s ausgeloest", platz)
-        if eintrag.get("einmalig", True):
-            platz_freigeben(settings, platz)
-        else:
-            platz_als_ausgeloest_markieren(settings, platz)
+        # Der Platz wird NICHT hier automatisch geleert/wiederverwendet --
+        # das wuerde gegen die Routine racen, die die Aufgabe gerade erst
+        # ausfuehrt. Nur als ausgeloest markiert, damit er nicht bei jedem
+        # weiteren Poll-Durchlauf erneut feuert. Ob/wann der Platz wieder
+        # frei wird, entscheidet die Routine selbst (erinnerung_leeren bzw.
+        # erinnerung_erstellen mit demselben platz zum Neu-Einplanen).
+        platz_als_ausgeloest_markieren(settings, platz)
 
 
 def _schleife(settings: Settings, stop_event: threading.Event) -> None:
