@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -33,7 +34,6 @@ class SlotZugang:
 @dataclass(frozen=True)
 class Settings:
     slots: dict[int, SlotZugang]
-    max_slots: int
     timezone: str
     vorlauf_minuten: int
     poll_intervall_sekunden: int
@@ -44,25 +44,43 @@ class Settings:
     mcp_port: int
 
 
+_SLOT_VAR_PATTERN = re.compile(r"^REMINDER_SLOT_(\d+)_(ROUTINE_ID|API_KEY)$")
+
+
+def _slots_aus_umgebung_lesen() -> dict[int, SlotZugang]:
+    """Scannt die Umgebung selbst nach REMINDER_SLOT_<N>_ROUTINE_ID/_API_KEY --
+    kein fester Deckel: wie viele Plaetze es gibt, ergibt sich automatisch
+    daraus, wie viele Paare tatsaechlich in der .env eingetragen sind (egal ob
+    lueckenlos durchnummeriert oder nicht)."""
+    gefunden: dict[int, dict[str, str]] = {}
+    for name, value in os.environ.items():
+        match = _SLOT_VAR_PATTERN.match(name)
+        if not match:
+            continue
+        wert = value.strip()
+        if not wert:
+            continue
+        nummer = int(match.group(1))
+        gefunden.setdefault(nummer, {})[match.group(2)] = wert
+
+    slots: dict[int, SlotZugang] = {}
+    for nummer, werte in sorted(gefunden.items()):
+        routine_id = werte.get("ROUTINE_ID")
+        api_key = werte.get("API_KEY")
+        if routine_id and api_key:
+            slots[nummer] = SlotZugang(routine_id=routine_id, api_key=api_key)
+        else:
+            fehlend = f"REMINDER_SLOT_{nummer}_API_KEY" if routine_id else f"REMINDER_SLOT_{nummer}_ROUTINE_ID"
+            raise ConfigError(
+                f"Platz {nummer}: {fehlend} fehlt -- es werden immer beide Werte "
+                "gebraucht (ROUTINE_ID und API_KEY)."
+            )
+    return slots
+
+
 def load_settings() -> Settings:
     try:
-        max_slots = int(_optional("MAX_SLOTS", "10"))
-        if not (1 <= max_slots <= 50):
-            raise ConfigError("MAX_SLOTS muss zwischen 1 und 50 liegen.")
-
-        slots: dict[int, SlotZugang] = {}
-        for platz in range(1, max_slots + 1):
-            routine_id = os.environ.get(f"REMINDER_SLOT_{platz}_ROUTINE_ID", "").strip()
-            api_key = os.environ.get(f"REMINDER_SLOT_{platz}_API_KEY", "").strip()
-            if routine_id and api_key:
-                slots[platz] = SlotZugang(routine_id=routine_id, api_key=api_key)
-            elif routine_id or api_key:
-                raise ConfigError(
-                    f"Platz {platz}: nur REMINDER_SLOT_{platz}_ROUTINE_ID oder nur "
-                    f"REMINDER_SLOT_{platz}_API_KEY gesetzt -- es werden immer beide "
-                    "gebraucht (oder keins von beiden, dann bleibt der Platz einfach "
-                    "ungenutzt)."
-                )
+        slots = _slots_aus_umgebung_lesen()
         if not slots:
             raise ConfigError(
                 "Kein einziger Platz konfiguriert -- mindestens ein Paar "
@@ -92,7 +110,6 @@ def load_settings() -> Settings:
 
         settings = Settings(
             slots=slots,
-            max_slots=max_slots,
             timezone=tz_name,
             vorlauf_minuten=vorlauf_minuten,
             poll_intervall_sekunden=poll_intervall_sekunden,

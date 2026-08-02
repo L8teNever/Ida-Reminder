@@ -57,13 +57,9 @@ def alle_plaetze_lesen(settings: Settings) -> list[dict]:
     with _lock:
         daten = _lesen(settings.state_path)
     ergebnis = []
-    for platz in range(1, settings.max_slots + 1):
+    for platz in sorted(settings.slots):
         eintrag = daten.get(str(platz))
-        info = {
-            "platz": platz,
-            "konfiguriert": platz in settings.slots,
-            "belegt": eintrag is not None,
-        }
+        info = {"platz": platz, "belegt": eintrag is not None}
         if eintrag is not None:
             info.update(eintrag)
         ergebnis.append(info)

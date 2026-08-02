@@ -11,36 +11,22 @@ services:
     ports:
       - "10.7.0.1:${MCP_PORT:-8030}:8030"
 
+    # env_file gibt dem Container ALLE Variablen aus der .env mit -- vor
+    # allem die REMINDER_SLOT_<N>_ROUTINE_ID/_API_KEY-Paare, deren Anzahl
+    # dynamisch ist (siehe app/config.py). Dadurch muss diese Datei nie
+    # angefasst werden, egal ob 1 oder 30 Plaetze konfiguriert sind.
+    env_file:
+      - .env
+
+    # environment ueberschreibt bei Namensgleichheit gezielt einzelne Werte
+    # aus env_file -- hier fuer die Pflichtpruefung (MCP_AUTH_TOKEN) und die
+    # container-internen Fixwerte (MCP_HOST/_PORT immer intern gleich, egal
+    # welchen Host-Port .env fuer die linke Seite von ports: waehlt).
     environment:
-      MAX_SLOTS: ${MAX_SLOTS:-10}
-      TIMEZONE: ${TIMEZONE:-Europe/Berlin}
-      VORLAUF_MINUTEN: ${VORLAUF_MINUTEN:-5}
-      POLL_INTERVALL_SEKUNDEN: ${POLL_INTERVALL_SEKUNDEN:-20}
-      STATE_PATH: /data/state.json
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?Bitte MCP_AUTH_TOKEN in .env setzen}
       MCP_HOST: 0.0.0.0
       MCP_PORT: 8030
-
-      REMINDER_SLOT_1_ROUTINE_ID: ${REMINDER_SLOT_1_ROUTINE_ID:-}
-      REMINDER_SLOT_1_API_KEY: ${REMINDER_SLOT_1_API_KEY:-}
-      REMINDER_SLOT_2_ROUTINE_ID: ${REMINDER_SLOT_2_ROUTINE_ID:-}
-      REMINDER_SLOT_2_API_KEY: ${REMINDER_SLOT_2_API_KEY:-}
-      REMINDER_SLOT_3_ROUTINE_ID: ${REMINDER_SLOT_3_ROUTINE_ID:-}
-      REMINDER_SLOT_3_API_KEY: ${REMINDER_SLOT_3_API_KEY:-}
-      REMINDER_SLOT_4_ROUTINE_ID: ${REMINDER_SLOT_4_ROUTINE_ID:-}
-      REMINDER_SLOT_4_API_KEY: ${REMINDER_SLOT_4_API_KEY:-}
-      REMINDER_SLOT_5_ROUTINE_ID: ${REMINDER_SLOT_5_ROUTINE_ID:-}
-      REMINDER_SLOT_5_API_KEY: ${REMINDER_SLOT_5_API_KEY:-}
-      REMINDER_SLOT_6_ROUTINE_ID: ${REMINDER_SLOT_6_ROUTINE_ID:-}
-      REMINDER_SLOT_6_API_KEY: ${REMINDER_SLOT_6_API_KEY:-}
-      REMINDER_SLOT_7_ROUTINE_ID: ${REMINDER_SLOT_7_ROUTINE_ID:-}
-      REMINDER_SLOT_7_API_KEY: ${REMINDER_SLOT_7_API_KEY:-}
-      REMINDER_SLOT_8_ROUTINE_ID: ${REMINDER_SLOT_8_ROUTINE_ID:-}
-      REMINDER_SLOT_8_API_KEY: ${REMINDER_SLOT_8_API_KEY:-}
-      REMINDER_SLOT_9_ROUTINE_ID: ${REMINDER_SLOT_9_ROUTINE_ID:-}
-      REMINDER_SLOT_9_API_KEY: ${REMINDER_SLOT_9_API_KEY:-}
-      REMINDER_SLOT_10_ROUTINE_ID: ${REMINDER_SLOT_10_ROUTINE_ID:-}
-      REMINDER_SLOT_10_API_KEY: ${REMINDER_SLOT_10_API_KEY:-}
+      STATE_PATH: /data/state.json
 
     # /data ist trotz read-only Rootfs beschreibbar (eigenes Volume) --
     # dort liegt state.json, damit geplante Erinnerungen einen

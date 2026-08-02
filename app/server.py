@@ -1,9 +1,11 @@
 """Ida-Reminder MCP Server.
 
 Erlaubt Claude, sich selbst zeitversetzt an eine Aufgabe zu erinnern: statt
-eines eigenen Cron-Jobs pro Erinnerung gibt es bis zu MAX_SLOTS 'Plaetze',
+eines eigenen Cron-Jobs pro Erinnerung gibt es beliebig viele 'Plaetze',
 jeder mit einem eigenen claude.ai-Routine-Trigger (routine_id + API-Key aus
-der .env). erinnerung_erstellen belegt automatisch den naechsten freien
+der .env) -- wie viele es gibt, erkennt der Server automatisch daran, wie
+viele REMINDER_SLOT_<N>_ROUTINE_ID/_API_KEY-Paare tatsaechlich gesetzt sind,
+kein Limit muss irgendwo eingestellt werden. erinnerung_erstellen belegt automatisch den naechsten freien
 Platz; ein Hintergrund-Thread (app/scheduler.py) prueft periodisch, ob ein
 Platz faellig ist (Zielzeitpunkt minus Vorlaufzeit erreicht), und loest dann
 die zu diesem Platz gehoerende Routine aus. Die ausgeloeste Routine liest
@@ -149,7 +151,7 @@ def erinnerungen_liste(platz: int = 0) -> list[dict] | dict:
         return alle
     treffer = next((p for p in alle if p["platz"] == platz), None)
     if treffer is None:
-        raise ValueError(f"Platz {platz} existiert nicht (konfiguriert: 1..{settings.max_slots}).")
+        raise ValueError(f"Platz {platz} existiert nicht (konfigurierte Plaetze: {sorted(settings.slots)}).")
     return treffer
 
 

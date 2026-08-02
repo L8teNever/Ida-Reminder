@@ -8,12 +8,15 @@ Aufgabe ausfuehrt. Laeuft wie die anderen Ida-*-Server als Docker-Container
 
 ## Wie es funktioniert
 
-Es gibt bis zu `MAX_SLOTS` (Standard 10) unabhaengige **Plaetze**. Jeder
-Platz braucht einen eigenen claude.ai-Routinen-API-Trigger (`routine_id` +
-Bearer-Token) in der `.env` -- deswegen mehrere Plaetze und nicht nur einer:
-so koennen mehrere Erinnerungen gleichzeitig "in der Luft" sein, ohne dass
-sich zwei Ausloesungen gegenseitig blockieren (eine einzelne claude.ai-Routine
-kann nicht sinnvoll zweimal parallel laufen).
+Es gibt beliebig viele unabhaengige **Plaetze** -- kein Limit wird irgendwo
+eingestellt, der Server erkennt beim Start selbst, wie viele es gibt, einfach
+an der Anzahl vollstaendig befuellter `REMINDER_SLOT_<N>_ROUTINE_ID`/`_API_KEY`-
+Paare in der `.env`. Jeder Platz braucht einen eigenen
+claude.ai-Routinen-API-Trigger (`routine_id` + Bearer-Token) -- deswegen
+mehrere Plaetze und nicht nur einer: so koennen mehrere Erinnerungen
+gleichzeitig "in der Luft" sein, ohne dass sich zwei Ausloesungen gegenseitig
+blockieren (eine einzelne claude.ai-Routine kann nicht sinnvoll zweimal
+parallel laufen).
 
 1. `erinnerung_erstellen(zeitpunkt, aufgabe)` sucht sich automatisch den
    naechsten freien Platz, speichert die Aufgabe dort und berechnet den
@@ -31,7 +34,7 @@ kann nicht sinnvoll zweimal parallel laufen).
    frei fuer eine ganz andere, spaetere Erinnerung.
 
 Weil die eigentliche Aufgabe erst zur Laufzeit aus dem Platz gelesen wird,
-koennen **alle 10 Routinen denselben, komplett generischen System-Prompt**
+koennen **alle Routinen denselben, komplett generischen System-Prompt**
 haben -- z.B.:
 
 > Du bist eine Ida-Reminder-Ausfuehrungs-Routine. Wenn du ausgeloest wirst,
@@ -39,8 +42,8 @@ haben -- z.B.:
 > deine Aufgabe zu erfahren. Folge dieser Anweisung, fuehre die Aufgabe aus,
 > und raeume danach ggf. wie angewiesen auf.
 
-Nur die 10 API-Trigger (routine_id + Key) sind unterschiedlich, nicht der
-Inhalt der Routinen selbst.
+Nur die API-Trigger (routine_id + Key) sind pro Platz unterschiedlich, nicht
+der Inhalt der Routinen selbst.
 
 ## Tools
 
@@ -68,8 +71,8 @@ Inhalt der Routinen selbst.
 
 ### 1. Pro Platz eine claude.ai-Routine mit API-Trigger anlegen
 
-Fuer jeden gewuenschten Platz (z.B. 3-5 reichen fuer den Alltag, bis zu 10
-moeglich):
+Fuer jeden gewuenschten Platz (z.B. 3-5 reichen fuer den Alltag, beliebig
+viele moeglich -- einfach weitere `REMINDER_SLOT_<N>_*`-Paare anlegen):
 
 1. Auf [claude.ai/code/routines](https://claude.ai/code/routines) eine neue
    Routine anlegen, generischen System-Prompt wie oben rein.
