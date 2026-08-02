@@ -1,0 +1,5 @@
+mcp>=1.28,<2
+starlette>=0.37
+uvicorn[standard]>=0.31
+requests>=2.31,<3
+tzdata>=2024.1

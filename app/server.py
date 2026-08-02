@@ -1,0 +1,202 @@
+"""Ida-Reminder MCP Server.
+
+Erlaubt Claude, sich selbst zeitversetzt an eine Aufgabe zu erinnern: statt
+eines eigenen Cron-Jobs pro Erinnerung gibt es bis zu MAX_SLOTS 'Plaetze',
+jeder mit einem eigenen claude.ai-Routine-Trigger (routine_id + API-Key aus
+der .env). erinnerung_erstellen belegt automatisch den naechsten freien
+Platz; ein Hintergrund-Thread (app/scheduler.py) prueft periodisch, ob ein
+Platz faellig ist (Zielzeitpunkt minus Vorlaufzeit erreicht), und loest dann
+die zu diesem Platz gehoerende Routine aus. Die ausgeloeste Routine liest
+ihre eigene Aufgabe per erinnerungen_liste(platz=...) nach und raeumt sich
+bei einmaligen Aufgaben selbst mit erinnerung_leeren wieder auf -- so bleibt
+derselbe Routine-Trigger fuer beliebig viele, inhaltlich ganz unterschiedliche
+Erinnerungen wiederverwendbar.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+import uvicorn
+from mcp.server.fastmcp import FastMCP
+from starlette.responses import JSONResponse
+
+from app.auth import BearerAuthMiddleware
+from app.config import load_settings
+from app.scheduler import starten as scheduler_starten
+from app.state import (
+    SlotEintrag,
+    alle_plaetze_lesen,
+    naechsten_freien_platz_finden,
+    platz_belegen,
+    platz_freigeben,
+)
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
+log = logging.getLogger("ida-reminder")
+
+settings = load_settings()
+
+mcp = FastMCP(
+    "Ida-Reminder",
+    instructions=(
+        "Werkzeuge, um sich selbst zeitversetzt an eine Aufgabe zu erinnern. "
+        "erinnerung_erstellen(zeitpunkt, aufgabe) reicht fuer den Normalfall -- "
+        "sucht sich automatisch einen freien Platz, alles Weitere (Timing, "
+        "Ausloesen) macht der Server selbst im Hintergrund, dafuer ist kein "
+        "weiterer Tool-Aufruf noetig. erinnerungen_liste zeigt den "
+        "Belegungsstatus aller Plaetze (mit platz=N nur einen einzelnen -- das "
+        "ist auch der Weg, wie eine gerade ausgeloeste Routine ihre eigene "
+        "Aufgabe nachliest). erinnerung_leeren gibt einen Platz wieder frei "
+        "(egal ob noch geplant oder schon ausgeloest) -- hat bewusst KEINEN "
+        "Bestaetigungs-Zwang, weil eine automatisch ausgeloeste Routine sich "
+        "damit selbststaendig aufraeumen koennen muss, ohne dass jemand im "
+        "Chat sitzt, der eine Rueckfrage beantworten koennte."
+    ),
+    host=settings.mcp_host,
+    port=settings.mcp_port,
+)
+
+
+def _zeitpunkt_parsen(zeitpunkt: str) -> datetime:
+    text = zeitpunkt.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        wert = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(
+            f"Ungueltiger zeitpunkt {zeitpunkt!r} -- erwartet ISO 8601, z.B. "
+            "'2026-08-01T15:00:00' (Server-Zeitzone) oder mit Offset "
+            "'2026-08-01T15:00:00+02:00'."
+        ) from exc
+    if wert.tzinfo is None:
+        wert = wert.replace(tzinfo=ZoneInfo(settings.timezone))
+    return wert
+
+
+@mcp.tool()
+def erinnerung_erstellen(zeitpunkt: str, aufgabe: str, einmalig: bool = True) -> dict:
+    """Plant eine Erinnerung: loest zum angegebenen Zeitpunkt (minus Vorlaufzeit,
+    Standard 5 Minuten, siehe erinnerungen_liste fuer die genaue Konfiguration)
+    automatisch eine Claude Routine aus, die die Aufgabe ausfuehrt. Sucht sich
+    dafuer selbststaendig den naechsten freien von mehreren konfigurierten
+    Plaetzen -- kein weiterer Tool-Aufruf noetig.
+
+    zeitpunkt: ISO 8601 Datum+Uhrzeit, z.B. '2026-08-01T15:00:00'. Ohne
+        Zeitzonen-Offset wird die konfigurierte Server-Zeitzone angenommen.
+        Muss in der Zukunft liegen.
+    aufgabe: Freitext, wird der ausgeloesten Routine spaeter 1:1 zum
+        Nachlesen bereitgestellt (siehe erinnerungen_liste) -- die Routine
+        bekommt sonst keinen weiteren Chat-Kontext mit, also entsprechend
+        selbststaendig verstaendlich formulieren.
+    einmalig: True (Standard) = informiert die ausgeloeste Routine, dass sie
+        den Platz danach selbst wieder freigeben soll (erinnerung_leeren).
+        False = Platz bleibt nach dem Ausloesen belegt, bis er manuell mit
+        erinnerung_leeren freigegeben wird.
+    """
+    ziel_dt = _zeitpunkt_parsen(zeitpunkt)
+
+    jetzt = datetime.now(timezone.utc)
+    if ziel_dt <= jetzt:
+        raise ValueError(f"zeitpunkt {zeitpunkt!r} liegt in der Vergangenheit.")
+
+    ausloese_dt = ziel_dt - timedelta(minutes=settings.vorlauf_minuten)
+    if ausloese_dt <= jetzt:
+        ausloese_dt = jetzt
+
+    platz = naechsten_freien_platz_finden(settings)
+    if platz is None:
+        raise ValueError(
+            f"Alle {len(settings.slots)} konfigurierten Plaetze sind aktuell belegt -- "
+            "erinnerungen_liste zeigt den Belegungsstatus, ggf. erst erinnerung_leeren "
+            "fuer einen nicht mehr benoetigten Platz aufrufen."
+        )
+
+    eintrag = SlotEintrag(
+        aufgabe=aufgabe,
+        zielzeitpunkt=ziel_dt.isoformat(),
+        ausloesezeitpunkt=ausloese_dt.isoformat(),
+        einmalig=einmalig,
+        erstellt_am=jetzt.isoformat(),
+    )
+    platz_belegen(settings, platz, eintrag)
+
+    return {
+        "platz": platz,
+        "zielzeitpunkt": eintrag.zielzeitpunkt,
+        "ausloesezeitpunkt": eintrag.ausloesezeitpunkt,
+        "einmalig": einmalig,
+        "hinweis": f"Erinnerung auf Platz {platz} gespeichert, wird um {eintrag.ausloesezeitpunkt} automatisch ausgeloest.",
+    }
+
+
+@mcp.tool()
+def erinnerungen_liste(platz: int = 0) -> list[dict] | dict:
+    """Zeigt Erinnerungs-Plaetze: Belegungsstatus, Aufgabe (falls belegt),
+    Ziel-/Ausloesezeitpunkt, einmalig-Flag und ob schon ausgeloest.
+
+    platz: 0 (Standard) = alle konfigurierten Plaetze als Liste. Sonst nur
+        der eine angegebene Platz als einzelnes Objekt -- das ist der Weg,
+        wie eine gerade ausgeloeste Routine ihre eigene Aufgabe nachliest.
+    """
+    alle = alle_plaetze_lesen(settings)
+    if platz == 0:
+        return alle
+    treffer = next((p for p in alle if p["platz"] == platz), None)
+    if treffer is None:
+        raise ValueError(f"Platz {platz} existiert nicht (konfiguriert: 1..{settings.max_slots}).")
+    return treffer
+
+
+@mcp.tool()
+def erinnerung_leeren(platz: int) -> dict:
+    """Gibt einen Platz wieder frei (loescht die dort gespeicherte Aufgabe).
+    Funktioniert sowohl fuer noch nicht ausgeloeste Plaetze (= Erinnerung vor
+    dem Ausloesen abbrechen) als auch fuer bereits ausgeloeste (= Aufraeumen
+    nach einer einmaligen Aufgabe). Bewusst KEIN bestaetigt-Zwang -- muss auch
+    von einer automatisch ausgeloesten Routine ohne Rueckfrage aufrufbar sein.
+    """
+    entfernt = platz_freigeben(settings, platz)
+    if not entfernt:
+        raise ValueError(f"Platz {platz} war nicht belegt.")
+    return {"platz": platz, "freigegeben": True}
+
+
+async def healthz(request):
+    return JSONResponse({"status": "ok"})
+
+
+def build_app():
+    app = mcp.streamable_http_app()
+    app.add_route("/healthz", healthz, methods=["GET"])
+    app.add_middleware(BearerAuthMiddleware, token=settings.mcp_auth_token)
+    return app
+
+
+def main() -> None:
+    app = build_app()
+    scheduler_starten(settings)
+    log.info(
+        "Ida-Reminder MCP Server startet auf %s:%s (Endpunkt: /mcp, Health: /healthz, "
+        "%s konfigurierte Plaetze, Zeitzone %s)",
+        settings.mcp_host, settings.mcp_port, len(settings.slots), settings.timezone,
+    )
+    # access_log=False: uvicorn wuerde sonst jede Request-Zeile inkl. vollem
+    # Pfad loggen -- und damit ein per ?token= mitgeschicktes MCP_AUTH_TOKEN
+    # im Klartext in die Docker-Logs schreiben.
+    uvicorn.run(
+        app,
+        host=settings.mcp_host,
+        port=settings.mcp_port,
+        log_level="info",
+        access_log=False,
+    )
+
+
+if __name__ == "__main__":
+    main()
