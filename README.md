@@ -98,7 +98,7 @@ cp .env.example .env
 `MCP_AUTH_TOKEN` (z.B. `openssl rand -hex 32`), `TIMEZONE` falls nicht
 Europe/Berlin, und die `REMINDER_SLOT_n_*`-Paare ausfuellen. `MCP_PORT`
 ggf. anpassen, damit er sich von anderen Ida-*-Containern auf demselben
-Server unterscheidet (Ida-Reminder default 8030).
+Server unterscheidet (Ida-Reminder default 8031).
 
 ### 3. Deployment (Dockge)
 
@@ -113,13 +113,23 @@ Ingress-Regel wie bei den anderen Projekten: gewaehlter Hostname ->
 
 ### 5. Als MCP-Server verbinden
 
+Per CLI (Header-Variante):
+
 ```
 claude mcp add --transport http ida-reminder https://<dein-hostname>.kulbarts.com/mcp --header "Authorization: Bearer <MCP_AUTH_TOKEN>"
 ```
 
-Fuer die claude.ai-Routinen aus Schritt 1: als Connector mit derselben URL +
-Bearer-Token hinzufuegen, damit die ausgeloeste Routine `erinnerungen_liste`
-und `erinnerung_leeren` aufrufen kann.
+Fuer den claude.ai-Connector (nimmt nur eine URL, keine eigenen Header) das
+Token stattdessen als Query-Parameter mitgeben -- wird von derselben
+BearerAuthMiddleware wie bei allen anderen Ida-*-Servern akzeptiert:
+
+```
+https://<dein-hostname>.kulbarts.com/mcp?token=<MCP_AUTH_TOKEN>
+```
+
+Fuer die claude.ai-Routinen aus Schritt 1: ebenfalls als Connector mit einer
+dieser beiden URL-Varianten hinzufuegen, damit die ausgeloeste Routine
+`erinnerungen_liste` und `erinnerung_leeren` aufrufen kann.
 
 ## Troubleshooting
 

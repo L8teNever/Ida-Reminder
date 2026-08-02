@@ -16,11 +16,11 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
     && chown -R appuser:appuser /app /data
 USER appuser
 
-EXPOSE 8030
+EXPOSE 8031
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import os,sys,urllib.request; \
-port=os.environ.get('MCP_PORT','8030'); \
+port=os.environ.get('MCP_PORT','8031'); \
 sys.exit(0) if urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz', timeout=3).status == 200 else sys.exit(1)"
 
 CMD ["python", "-m", "app.server"]

@@ -116,7 +116,7 @@ def load_settings() -> Settings:
             state_path=_optional("STATE_PATH", "/data/state.json"),
             mcp_auth_token=mcp_auth_token,
             mcp_host=_optional("MCP_HOST", "0.0.0.0"),
-            mcp_port=int(_optional("MCP_PORT", "8030")),
+            mcp_port=int(_optional("MCP_PORT", "8031")),
         )
     except ConfigError as exc:
         print(f"[Ida-Reminder] Konfigurationsfehler: {exc}", file=sys.stderr)

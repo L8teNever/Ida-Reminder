@@ -9,7 +9,7 @@ services:
     # separat laufende cloudflared-Tunnel-Container diesen Service erreicht.
     # Absicherung nach aussen zusaetzlich per Token direkt in der Anwendung.
     ports:
-      - "10.7.0.1:${MCP_PORT:-8030}:8030"
+      - "10.7.0.1:${MCP_PORT:-8031}:8031"
 
     # env_file gibt dem Container ALLE Variablen aus der .env mit -- vor
     # allem die REMINDER_SLOT_<N>_ROUTINE_ID/_API_KEY-Paare, deren Anzahl
@@ -25,7 +25,7 @@ services:
     environment:
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?Bitte MCP_AUTH_TOKEN in .env setzen}
       MCP_HOST: 0.0.0.0
-      MCP_PORT: 8030
+      MCP_PORT: 8031
       STATE_PATH: /data/state.json
 
     # /data ist trotz read-only Rootfs beschreibbar (eigenes Volume) --
@@ -40,7 +40,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8030/healthz', timeout=3)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8031/healthz', timeout=3)",
         ]
       interval: 30s
       timeout: 5s
