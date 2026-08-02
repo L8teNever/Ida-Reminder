@@ -57,7 +57,12 @@ mcp = FastMCP(
         "(egal ob noch geplant oder schon ausgeloest) -- hat bewusst KEINEN "
         "Bestaetigungs-Zwang, weil eine automatisch ausgeloeste Routine sich "
         "damit selbststaendig aufraeumen koennen muss, ohne dass jemand im "
-        "Chat sitzt, der eine Rueckfrage beantworten koennte."
+        "Chat sitzt, der eine Rueckfrage beantworten koennte. "
+        "aktuelle_uhrzeit liefert die aktuelle Zeit in der Server-Zeitzone -- "
+        "damit relative Angaben ('in 10 Minuten', 'heute Abend') in einen "
+        "absoluten zeitpunkt fuer erinnerung_erstellen umgerechnet werden "
+        "koennen, ohne dafuer extra einen Shell-Befehl auf einem anderen "
+        "Server auszufuehren."
     ),
     host=settings.mcp_host,
     port=settings.mcp_port,
@@ -153,6 +158,26 @@ def erinnerungen_liste(platz: int = 0) -> list[dict] | dict:
     if treffer is None:
         raise ValueError(f"Platz {platz} existiert nicht (konfigurierte Plaetze: {sorted(settings.slots)}).")
     return treffer
+
+
+_WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+
+@mcp.tool()
+def aktuelle_uhrzeit() -> dict:
+    """Gibt die aktuelle Uhrzeit zurueck (Server-Zeitzone + UTC). Nuetzlich um
+    z.B. eine relative Angabe ('in 10 Minuten', 'heute Abend') in einen
+    absoluten zeitpunkt fuer erinnerung_erstellen umzurechnen, ohne dafuer
+    extra einen Shell-Befehl auf einem anderen Server ausfuehren zu muessen.
+    """
+    jetzt_utc = datetime.now(timezone.utc)
+    jetzt_lokal = jetzt_utc.astimezone(ZoneInfo(settings.timezone))
+    return {
+        "iso_lokal": jetzt_lokal.isoformat(),
+        "iso_utc": jetzt_utc.isoformat(),
+        "zeitzone": settings.timezone,
+        "lesbar": f"{_WOCHENTAGE[jetzt_lokal.weekday()]}, {jetzt_lokal.strftime('%d.%m.%Y %H:%M:%S')}",
+    }
 
 
 @mcp.tool()

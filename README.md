@@ -52,6 +52,7 @@ der Inhalt der Routinen selbst.
 | `erinnerung_erstellen` | Plant eine Erinnerung (`zeitpunkt`, `aufgabe`, optional `einmalig`, Standard `True`). Sucht sich selbst einen freien Platz. |
 | `erinnerungen_liste` | Zeigt alle Plaetze mit Status (optional `platz=N` fuer nur einen -- so liest eine ausgeloeste Routine ihre eigene Aufgabe). |
 | `erinnerung_leeren` | Gibt einen Platz wieder frei (Aufgabe abbrechen ODER nach Erledigung aufraeumen). **Kein** `bestaetigt`-Zwang -- siehe Sicherheit. |
+| `aktuelle_uhrzeit` | Aktuelle Zeit in Server-Zeitzone + UTC (fuer relative Angaben wie "in 10 Minuten" -> absoluter `zeitpunkt`), ohne dafuer extra SSH auf einen anderen Server zu brauchen. |
 
 ## Sicherheit -- unbedingt lesen
 
